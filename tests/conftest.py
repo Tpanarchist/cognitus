@@ -1,144 +1,157 @@
-"""Global pytest configuration and fixtures"""
+"""Global pytest fixtures and configurations"""
 import pytest
+from typing import Dict, Any, Optional
+from pathlib import Path
+import json
 import logging
-from typing import Any, Dict, Optional
-from contextlib import contextmanager
-from dataclasses import dataclass
 
-# Custom test result data class
-@dataclass
-class RoleTestResult:
-    """Container for role test results"""
-    role: str
-    content: str
-    metadata: Optional[Dict[str, Any]] = None
-    is_valid: bool = True
-    error_message: Optional[str] = None
+# Configure logging for tests
+@pytest.fixture(scope="session")
+def configure_logging():
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
 
-# Reusable test data
+# Sample data fixtures
 @pytest.fixture
-def valid_roles():
-    """Valid role test data"""
+def sample_messages() -> Dict[str, Dict[str, Any]]:
+    """Provides sample messages for testing"""
     return {
-        "system": {
+        "user_message": {
+            "role": "user",
+            "content": "Hello, world!",
+            "metadata": {}
+        },
+        "system_message": {
+            "role": "system",
             "content": "You are a helpful assistant.",
-            "expected_behavior": "strip_whitespace"
+            "metadata": {}
         },
-        "user": {
-            "content": "Hello!",
-            "expected_behavior": "preserve"
+        "assistant_message": {
+            "role": "assistant",
+            "content": "Hi! How can I help you today?",
+            "metadata": {}
         },
-        "assistant": {
-            "content": "How can I help?",
-            "expected_behavior": "preserve"
-        },
-        "function": {
+        "function_message": {
+            "role": "function",
             "content": '{"result": 42}',
-            "expected_behavior": "validate_json"
+            "name": "calculate",
+            "metadata": {"function_call": True}
         }
     }
 
 @pytest.fixture
-def function_metadata():
-    """Sample function metadata"""
+def sample_function_calls() -> Dict[str, Dict[str, Any]]:
+    """Provides sample function calls for testing"""
     return {
-        "basic": {
-            "name": "calculator",
-            "function_call": "calculate_sum"
+        "basic_call": {
+            "name": "calculate_sum",
+            "args": {"numbers": [1, 2, 3]},
+            "metadata": {}
         },
-        "complex": {
-            "name": "data_processor",
-            "function_call": "process_data",
-            "additional_params": {"timeout": 30}
+        "complex_call": {
+            "name": "process_data",
+            "args": {
+                "input": "test data",
+                "options": {"format": "json", "validate": True}
+            },
+            "metadata": {"priority": "high"}
         }
     }
 
-# Log capture helper
 @pytest.fixture
-def capture_logs():
-    """Helper to capture and verify logs"""
-    @contextmanager
-    def _capture_logs(logger_name: str, level=logging.INFO):
-        logger = logging.getLogger(logger_name)
-        handler = logging.StreamHandler()
-        handler.setLevel(level)
-        logger.addHandler(handler)
-        messages = []
-        
-        def handler_func(record):
-            messages.append(record.getMessage())
-        
-        handler.handle = handler_func
-        try:
-            yield messages
-        finally:
-            logger.removeHandler(handler)
-            
-    return _capture_logs
+def temp_test_dir(tmp_path):
+    """Provides temporary directory for test files"""
+    return tmp_path
 
-# Role validation helpers
+# Mock response fixtures
 @pytest.fixture
-def assert_valid_role():
-    """Helper to assert role validity and properties"""
-    def _assert_valid_role(result: Dict[str, Any], expected: RoleTestResult):
-        assert result is not None
-        assert result["role"] == expected.role
-        assert result["content"] == expected.content
-        if expected.metadata:
-            for key, value in expected.metadata.items():
-                assert result.get(key) == value
-                
-    return _assert_valid_role
+def mock_successful_response():
+    """Provides mock successful response data"""
+    return {
+        "success": True,
+        "data": {"result": "test_result"},
+        "metadata": {"processing_time": 0.1}
+    }
 
 @pytest.fixture
-def assert_invalid_role():
-    """Helper to assert role invalidity"""
-    def _assert_invalid_role(result: Optional[Dict[str, Any]], logs: List[str], expected_error: str):
-        assert result is None
-        assert any(expected_error in log for log in logs)
-        
-    return _assert_invalid_role
+def mock_error_response():
+    """Provides mock error response data"""
+    return {
+        "success": False,
+        "error": "test_error",
+        "metadata": {"error_code": "TEST_ERROR"}
+    }
 
-# Content behavior helpers
-class ContentBehaviorHelper:
-    """Helpers for testing content behavior"""
+# Test data helpers
+class TestDataHelper:
+    """Helper class for managing test data"""
     
     @staticmethod
-    def apply_strip_whitespace(content: str) -> str:
-        """Apply whitespace stripping behavior"""
-        return content.strip()
+    def load_test_data(filename: str) -> Dict[str, Any]:
+        """Load test data from JSON file"""
+        data_path = Path(__file__).parent / "test_data" / filename
+        with data_path.open() as f:
+            return json.load(f)
     
     @staticmethod
-    def apply_preserve(content: str) -> str:
-        """Apply content preservation behavior"""
-        return content
-    
-    @staticmethod
-    def apply_validate_json(content: str) -> bool:
-        """Apply JSON validation behavior"""
-        try:
-            json.loads(content)
-            return True
-        except json.JSONDecodeError:
-            return False
+    def create_test_message(
+        role: str,
+        content: str,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Create a test message with given parameters"""
+        return {
+            "role": role,
+            "content": content,
+            "metadata": kwargs.get("metadata", {}),
+            **kwargs
+        }
 
 @pytest.fixture
-def content_behavior():
-    """Helper for content behavior testing"""
-    return ContentBehaviorHelper()
+def test_data_helper():
+    """Provides TestDataHelper instance"""
+    return TestDataHelper
 
 # Error injection helper
 @pytest.fixture
-def error_injection():
-    """Helper to simulate errors in components"""
-    @contextmanager
-    def _inject_error(component: Any, method_name: str, error: Exception):
-        original_method = getattr(component, method_name)
-        def error_method(*args, **kwargs):
-            raise error
-        setattr(component, method_name, error_method)
-        try:
-            yield
-        finally:
-            setattr(component, method_name, original_method)
-    return _inject_error
+def error_injector():
+    """Helper for injecting errors in tests"""
+    class ErrorInjector:
+        @staticmethod
+        def raise_error(*args, **kwargs):
+            raise Exception("Test error")
+            
+        @staticmethod
+        def return_error(*args, **kwargs):
+            return None, "Test error"
+    
+    return ErrorInjector()
+
+# Performance tracking helper
+@pytest.fixture
+def performance_tracker():
+    """Helper for tracking test performance"""
+    class PerformanceTracker:
+        def __init__(self):
+            self.timings = {}
+            
+        def record_timing(self, operation: str, time_taken: float):
+            if operation not in self.timings:
+                self.timings[operation] = []
+            self.timings[operation].append(time_taken)
+            
+        def get_average(self, operation: str) -> Optional[float]:
+            if operation in self.timings:
+                return sum(self.timings[operation]) / len(self.timings[operation])
+            return None
+    
+    return PerformanceTracker()
+
+# Cleanup helper
+@pytest.fixture(autouse=True)
+def cleanup():
+    """Automatic cleanup after each test"""
+    yield
+    # Add any necessary cleanup code here
